@@ -1,9 +1,10 @@
 import numpy as np
+import pandas as pd
 from sklearn.preprocessing import LabelBinarizer, OneHotEncoder
 
 
 def process_data(
-    X, categorical_features=[], label=None, training=True, encoder=None, lb=None
+    X, categorical_features=None, label=None, training=True, encoder=None, lb=None
 ):
     """ Process the data used in the machine learning pipeline.
 
@@ -43,6 +44,8 @@ def process_data(
         Trained LabelBinarizer if training is True, otherwise returns the binarizer
         passed in.
     """
+    if categorical_features is None:
+        categorical_features = []
 
     if label is not None:
         y = X[label]
@@ -50,28 +53,43 @@ def process_data(
     else:
         y = np.array([])
 
-    X_categorical = X[categorical_features].values
-    X_continuous = X.drop(*[categorical_features], axis=1)
+    if categorical_features:
+        X_categorical = X[categorical_features].values
+        print("Incoming categorical columns:", categorical_features)
+        print("Shape of X_categorical:", X_categorical.shape)
+    else:
+        X_categorical = np.empty((X.shape[0], 0))  # Empty 2D array
+        print("No categorical columns provided.")
 
-    if training is True:
+    X_continuous = X.drop(columns=categorical_features, axis=1).values
+
+    if training:
         encoder = OneHotEncoder(sparse_output=False, handle_unknown="ignore")
         lb = LabelBinarizer()
         X_categorical = encoder.fit_transform(X_categorical)
+        print("Encoder categories after fitting:", encoder.categories_)
         y = lb.fit_transform(y.values).ravel()
+        print("Label shape after fit_transform:", y.shape)
+        print("Labels after fit_transform:", y[:5])
+
     else:
         X_categorical = encoder.transform(X_categorical)
         try:
             y = lb.transform(y.values).ravel()
-        # Catch the case where y is None because we're doing inference.
         except AttributeError:
-            pass
+            pass # Inference mode: y may be None
 
-    X = np.concatenate([X_continuous, X_categorical], axis=1)
+    # Combine continuous and categorical features
+    X_combined = np.concatenate([X_continuous, X_categorical], axis=1)
+
+    # Create column names
+    cat_feature_names = encoder.get_feature_names_out(categorical_features)
+    cont_feature_names = [col for col in X.columns if col not in categorical_features]
+    all_feature_names = cont_feature_names + list(cat_feature_names)
+
+    # Convert to DataFrame
+    X = pd.DataFrame(X_combined, columns=all_feature_names)
+    print("Final X shape:", X.shape)
+    print("Final columns:", X.columns.tolist())
+
     return X, y, encoder, lb
-
-def apply_label(inference):
-    """ Convert the binary label in a single inference sample into string output."""
-    if inference[0] == 1:
-        return ">50K"
-    elif inference[0] == 0:
-        return "<=50K"
